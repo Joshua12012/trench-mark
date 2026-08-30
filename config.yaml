@@ -1,0 +1,16 @@
+# config.yaml
+model:
+  name: "yolov8n"
+  onnx_path: "yolov8n.onnx"
+  input_shape: "1x3x640x640" # We will replace the '1' dynamically
+
+benchmarks:
+  batch_sizes: [1, 4, 8]
+  precisions: 
+    - "fp32"
+    - "fp16"
+    - "int8"
+
+settings:
+  iterations: 500
+  warmup: 50
