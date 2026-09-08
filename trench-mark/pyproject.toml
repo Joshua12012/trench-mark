@@ -4,14 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trench-mark"
-version = "1.0.2"
-description = "Automated TensorRT performance profiling for Jetson edge devices."
+version = "1.0.3"
+description = "Automated, memory-safe TensorRT performance profiling and ONNX export for Jetson edge devices."
 readme = "README.md"
 requires-python = ">=3.8"
+keywords = ["tensorrt", "nvidia", "jetson", "yolo", "benchmark", "edge-computing"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Console"
+]
 dependencies = [
     "pyyaml",
+    "ultralytics"
 ]
 
 [project.scripts]
-# Terminal Command = "python_folder_name.file_name:function_name"
 trench-mark = "trench_mark.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
