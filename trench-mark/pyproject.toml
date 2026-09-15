@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trench-mark"
-version = "1.0.3"
+version = "1.0.5"
 description = "Automated, memory-safe TensorRT performance profiling and ONNX export for Jetson edge devices."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -17,8 +17,18 @@ classifiers = [
 ]
 dependencies = [
     "pyyaml",
-    "ultralytics"
+    "ultralytics",
+    "onnx>=1.12.0",
+    "onnxconverter-common>=1.13.0",
+    "onnxslim>=0.1.0",
+    "psutil>=5.8.0",
+    "torchvision>=0.9.0"
 ]
+
+[project.optional-dependencies]
+tf = ["tf2onnx"]
+timm = ["timm"]
+
 
 [project.scripts]
 trench-mark = "trench_mark.cli:main"

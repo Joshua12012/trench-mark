@@ -6,3 +6,5 @@ models/
 .gitignore
 *__pycache__/
 *logs/
+*reports/
+*.cache
