@@ -374,29 +374,39 @@ def convert_onnx_to_fp16(src_onnx: str, dst_onnx: str) -> str:
     """
     dst_path = Path(dst_onnx)
     if dst_path.exists() and dst_path.stat().st_size > 0:
-        return str(dst_path.resolve())
+        # Self-healing: Check if existing FP16 model has mismatched Cast ops from previous conversions
+        try:
+            m_check = onnx.load(str(dst_path))
+            repaired = False
+            for node in m_check.graph.node:
+                if node.op_type == "Cast":
+                    for attr in node.attribute:
+                        if attr.name == "to" and attr.i == 1:
+                            repaired = True
+                            attr.i = 10
+            if repaired:
+                print(f"🔧 [Model Resolver] Repaired mismatched Cast nodes in existing '{dst_path.name}'.")
+                onnx.save(m_check, str(dst_path))
+            return str(dst_path.resolve())
+        except Exception:
+            return str(dst_path.resolve())
 
-    # Strategy 1: Try onnxconverter-common (Standard ONNX FP16 conversion)
-    try:
-        from onnxconverter_common import float16
-        print(f"⚙️  [Model Resolver] Converting ONNX graph to FP16 via onnxconverter-common...")
-        model = onnx.load(src_onnx)
-        model_fp16 = float16.convert_float_to_float16(model, keep_io_types=False)
-        dst_path.parent.mkdir(parents=True, exist_ok=True)
-        onnx.save(model_fp16, str(dst_path))
-        return str(dst_path.resolve())
-    except ImportError:
-        pass
-    except Exception as e:
-        print(f"⚠️  [Model Resolver] onnxconverter-common conversion note: {e}")
-
-    # Strategy 2: If companion .pt exists (YOLO), re-export with half=True
     src_path = Path(src_onnx)
+
+    # Strategy 1 (Preferred for YOLO): Native Framework Half Export
+    # Native YOLO export guarantees 100% type consistency across elementwise layers
+    # and properly sets Cast nodes to FLOAT16 without Float vs Half type conflicts.
     pt_candidate = src_path.with_suffix(".pt")
+    if not pt_candidate.exists():
+        for cand in [src_path.parent / f"{src_path.stem}.pt", Path(f"{src_path.stem}.pt")]:
+            if cand.exists():
+                pt_candidate = cand
+                break
+
     if pt_candidate.exists():
         try:
             from ultralytics import YOLO
-            print(f"⚙️  [Model Resolver] Exporting '{pt_candidate.name}' directly to FP16 ONNX...")
+            print(f"⚙️  [Model Resolver] Exporting '{pt_candidate.name}' directly to FP16 ONNX via Ultralytics...")
             model = YOLO(str(pt_candidate))
             exported = model.export(
                 format="onnx",
@@ -407,11 +417,38 @@ def convert_onnx_to_fp16(src_onnx: str, dst_onnx: str) -> str:
                 half=True,
             )
             exported_path = Path(exported)
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
             if exported_path.resolve() != dst_path.resolve():
                 shutil.move(str(exported_path), str(dst_path))
             return str(dst_path.resolve())
         except Exception as e:
             print(f"⚠️  [Model Resolver] YOLO direct FP16 export note: {e}")
+
+    # Strategy 2: Standard ONNX FP16 conversion via onnxconverter-common
+    # with post-processing type patching for ElementWise operations
+    try:
+        from onnxconverter_common import float16
+        print(f"⚙️  [Model Resolver] Converting ONNX graph to FP16 via onnxconverter-common...")
+        model = onnx.load(src_onnx)
+        model_fp16 = float16.convert_float_to_float16(model, keep_io_types=False)
+
+        # Post-Processing: Fix type inconsistencies for TensorRT 11 strongly-typed parser.
+        # In graphs with Cast ops (e.g. Range -> Cast), onnxconverter-common often leaves
+        # target attribute 'to' as FLOAT (1). When feeding into an ElementWise Add with Half,
+        # TRT 11 throws Error Code 4. We patch all Cast to=FLOAT (1) -> to=FLOAT16 (10).
+        for node in model_fp16.graph.node:
+            if node.op_type == "Cast":
+                for attr in node.attribute:
+                    if attr.name == "to" and attr.i == 1:
+                        attr.i = 10
+
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+        onnx.save(model_fp16, str(dst_path))
+        return str(dst_path.resolve())
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"⚠️  [Model Resolver] onnxconverter-common conversion note: {e}")
 
     # Fallback to source ONNX if conversion is not possible
     return src_onnx
